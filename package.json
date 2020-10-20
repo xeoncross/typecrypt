@@ -1,0 +1,38 @@
+{
+    "name": "typecrypt",
+    "version": "0.1.0",
+    "description": "public key crypto library wrapping webcrypto",
+    "main": "dist/TypeCrypt.js",
+    "scripts": {
+        "compile": "tsc",
+        "dev:compile": "tsc --watch --project tsconfig.test.json",
+        "dev:serve": "npx browser-sync start --server --startPath test --watch",
+        "dev": "npm run dev:compile & npm run dev:serve",
+        "test:compile": "tsc --project tsconfig.test.json",
+        "test:serve": "npx browser-sync start --server --startPath test",
+        "test": "npm run test:compile & npm run test:serve",
+        "coverage:puppeteer": "node test/puppeteerDriver.js",
+        "coverage:report": "nyc report --reporter=html",
+        "coverage": "npm run coverage:puppeteer && npm run coverage:report",
+        "testem": "testem",
+        "testem:ci": "testem:ci"
+    },
+    "author": "",
+    "license": "ISC",
+    "devDependencies": {
+        "@types/chai": "^4.2.6",
+        "@types/mocha": "^5.2.7",
+        "browser-sync": "^2.26.7",
+        "chai": "^4.2.0",
+        "mocha": "^6.2.2",
+        "nyc": "^14.1.1",
+        "puppeteer": "^2.0.0",
+        "puppeteer-to-istanbul": "^1.2.2",
+        "testem": "^3.0.2",
+        "typescript": "^3.7.3"
+    },
+    "dependencies": {
+        "fastestsmallesttextencoderdecoder": "^1.0.8",
+        "webcrypto-liner": "^1.0.2"
+    }
+}

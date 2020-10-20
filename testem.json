@@ -1,0 +1,7 @@
+{
+    "framework": "mocha+chai", 
+    "serve_files": [
+        "test/specs/**/*.js", 
+        "test/src/**/*.js"
+    ]
+}
