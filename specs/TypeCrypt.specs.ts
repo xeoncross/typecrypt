@@ -90,8 +90,8 @@ describe('TypeCrypt', () => {
         })
     })
 
-    // https://mermaid-js.github.io/mermaid-live-editor/#/edit/
-    describe('signup process', () => {
+    // Modeling a social network without robust forward secrecy
+    describe('possible signup process', () => {
         it('should create and secure a new account', async () => {
 
             // Each account has the primary identity keypair that is used to 
@@ -99,82 +99,136 @@ describe('TypeCrypt', () => {
             // This is done by signing the correct account bundle to prove that 
             // is what should be used to contact them.
             //
-            // 1) This will provide a way to recover an account when the accountKeypair is 
+            // 1) Eventually, this will provide a way to recover an account when the accountKeypair is 
             //    encrypted with a different passphrase which is stored with friends / printed out
             // 2) as well as givethe account owner the option to change encryption keys as needed
             // without losing their public key identity.
-
             let accountPassphrase = TypeCrypt.randomBytes(32)
             let accountLock = await TypeCrypt.newAESKey(accountPassphrase)
             let [accountPriKey, accountPubKey] = await TypeCrypt.newSigningKeyPair()
 
-            // User password used to encrypt and secure the account identity (at first) as well as the keychain
+            // The identity for the user is:
+            let id = await accountPubKey.export()
+
+            // User password used to encrypt and secure the account identity (at first) as well as each keypair used
             let userPassphrase = TypeCrypt.toUtf8Bytes("password1")
             let userLock = await TypeCrypt.newAESKey(userPassphrase)
 
             // Each account has two (replace-able) keypairs that are used for public and private messages
+            // These keypairs are replaced every X duration with new ones
 
-            // For private messages
+            // For private messages (signing not needed)
             let [userEncryptionPriKey, userEncryptionPubKey] = await TypeCrypt.newEncryptionKeyPair()
-
-            // For public messages
+            // For public messages (encryption not needed)
             let [userSigningPriKey, userSigningPubKey] = await TypeCrypt.newSigningKeyPair()
 
-            // The identity for the user is:
-            // id: await accountPubKey.export(),
-            // This is the "key" -> value prefix used by the following account parts:
+            let mostRecentKey = {
+                created: Date.now(),
+                encryption: {
+                    pubic: await userEncryptionPubKey.export(),
+                    private: (await userLock.encrypt(await userEncryptionPriKey.export())).toString()
+                },
+                signing: {
+                    pubic: await userSigningPubKey.export(),
+                    private: (await userLock.encrypt(await userSigningPriKey.export())).toString()
+                },
+            }
 
-            // Everything needs to be signed: accountPriKey.sign(...)
-            // All messages this user sends need to have the "created" date appended
-            // so the reciever knows which version of this identity to use...?
-            // [accountPubKey : 1234567890]
+            // Identity verification, proving these are the correct keys to use
+            // Use the identity (accountPubKey) to verify this signature
+            let mostRecentKeySignature = accountPriKey.sign(TypeCrypt.toUtf8Bytes(JSON.stringify(mostRecentKey)))
+
+
+            // Client Needs:
+            // 1) public requesting data for this user
+            //  - profile (username, bio, image, etc...)
+            //  - public keys
+            //  - friend list(?)
+            //  - messages by user
+            // 2) user logging on fetching all their account data
+
+
+
+            // Multiple generations of keypairs allow us basic forward secrecy
+            // and the abillity to recover an identity should the account password be 
+            // compromised by allowing us to issue new keys for this identity
+            // PATH: /[identity]/keys/[latest|all]
+            let keys = [
+                [mostRecentKey, mostRecentKeySignature]
+                // additional past keys
+                // [ ... ], 
+                // [ ... ],
+            ]
+
+            // 
+            // Notes:
+            //
+            // - Most everything needs to be signed: accountPriKey.sign(...) to prevent modification
+            // - All messages this user sends need to have the "created" date appended
+            //   so the receiver knows which version of this identity to use...?
+            //   [accountPubKey : 1234567890]
 
 
             // Only pulled when changing account key pairs (lost password, etc..)
+            // Stored using the publicKey as the key
             let identityRecord = {
+                // created: no, we don't let the creator say how old his account is
                 salt: accountLock.salt,
                 privateKey: (await accountLock.encrypt(await accountPriKey.export())).toString(),
-                // publicKey: accountPubKey.export(),
-                // signature: accountPriKey.sign(TypeCrypt.toUtf8Bytes("^all this stuff above^"))
-            }
-            // Stored using the publicKey as the key
-            // No need for a signature as only the person with the password (the account owner)
-            // cares about the data in this (seldom accessed) record.
+                // publicKey: accountPubKey.export(), // Used as the key, so not stored?
 
-            // Needs:
-            // 1) public requesting public keys for this user
-            // 2) user logging on fetching all their account data
+                // let identityRecordSignature = accountPriKey.sign(TypeCrypt.toUtf8Bytes(JSON.stringify(identityRecord)))
+                // No need for a signature as only the person with the password (the account owner)
+                // cares about the data in this (seldom accessed) record.
 
-            // Key: /[identity]/keys/[latest|all] -> Value: JSON
-            // v1/2/3/etc.. account record
-            let keys = {
-                created: Date.now(), // to know which key is newest
-                encryptionKey: await userEncryptionPubKey.export(),
-                signingKey: await userSigningPubKey.export(),
-                // Identity verification, proving these are the correct keys to use
-                // Use the identity (accountPubKey) to verify this signature
-                signature: accountPriKey.sign(TypeCrypt.toUtf8Bytes("^all this stuff above^"))
+                // For now, accountPassphrase is not stored but written down/printed by 
+                // the user as a way to recover their account.
+                // Eventually will be split into parts to be sent to friends.
             }
-            
-            // Key: /[identity]/account/[latest|all] -> Value: JSON
-            // Encrypted, unreadable blob
-            let account = {
-                created: Date.now(), // matches keyRecord value
-                salt: userLock.salt, // used to unlock
-                data: { // encrypted!
-                    encryptionKey: await userEncryptionPubKey.export(),
-                    signingKey: await userSigningPubKey.export(),
-                    following: ["pubkey1", "pubkey1", "etc..."],
+
+
+            // We can created shared secrets by fetching the public key of someone we want to talk with
+            // Instead of doing a HTTP request for it, lets make a pretend friend here
+            let [_, friendsPubKey] = await TypeCrypt.newEncryptionKeyPair()
+            let sharedSecretKey = await TypeCrypt.deriveSharedKey(userEncryptionPriKey, friendsPubKey);
+
+            // User metadata and account storage 
+            let profile = {
+                // Anyone can see this data
+                public: {
+                    username: "john",
+                    photo: "?",
+                    bio: "website or other description?",
+                    recommended: ["identity1", "identity2"], // Recommended accounts or groups to follow (helps friends find topics)
+                },
+                private: {
+                    friends: [
+                        // This is their account identity public key. Every time we want to message them 
+                        // we download their most recent key and derive a shared secret (shown above).
+                        // On login, we also fetch their profile and keep it in memory for the session
+                        // This means profile changes can take a bit to refresh if the owner changes them.
+                        "identity1", 
+                        "identity2", // etc..
+                    ],
+                    groups: [
+                        // Need to store private keys here for groups we moderate
+                    ],
+                    topics: [
+                        // list of topics this user wants to see the latest posts from in his feed
+                    ]
                 }
             }
 
-            // // Step 2: Active keychain keys
-            // // Messaging keypair
-            // let randomPassphrase = TypeCrypt.fromUtf8Bytes(TypeCrypt.randomBytes(32))
-            // let currentLockKeypair = await TypeCrypt.newEncryptionKey(randomPassphrase)
+            // All of these represent the user
+            let x = {
+                identity: identityRecord,
+                keys,
+                public: profile.public,
+                provate: profile.private,
+            }
 
 
-            // let accountKeypairJwk = await crypto.subtle.wrapKey("jwk", accountKeypair.Key, passphraseKeypair, "AES-GCM")
+
 
         })
     })
